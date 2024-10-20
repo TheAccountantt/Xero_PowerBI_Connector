@@ -1,9 +1,8 @@
-// This file contains your Data Connector logic
 [Version = "1.0.0"]
 section ZeroConnector;
 
 client_id = "4E7B0EC068DA412492991FD63BA32B21";
-required_scopes = "offline_access openid profile email accounting.transactions.read accounting.reports.read accounting.journals.read accounting.contacts.read";
+required_scopes = "openid profile offline_access email accounting.transactions.read accounting.contacts.read";
 
 windowWidth = 600;
 windowHeight = 800;
@@ -11,21 +10,26 @@ windowHeight = 800;
 redirect_uri = "https://oauth.powerbi.com/views/oauthredirect.html";
 base_url = "https://api.xero.com";
 
-
-// Data Source definition
+// Data Source Kind description
 ZeroConnector = [
-    TestConnection = (dataSourcePath) => { "ZeroConnector.Contents" },
     Authentication = [
         OAuth = [
             StartLogin = StartLogin,
             FinishLogin = FinishLogin,
             Refresh = Refresh,
-            Label = Extension.LoadString("AuthenticationLabel")
+            Label = Extension.LoadString("ButtonTitle")
         ]
-    ]
+    ],
+    Label = Extension.LoadString("ButtonTitle"),
+    TestConnection = (dataSourcePath) => {"ZeroConnector.Contents"},
+    Functions = { 
+        ZeroConnector.Contents = [
+            TestConnection = (dataSourcePath) => {"ZeroConnector.Contents"}
+        ]
+    }
 ];
 
-//OAuth flow
+// OAuth flow
 StartLogin = (resourceUrl, state, display) =>
     let
         plainTextCodeVerifier = Text.NewGuid() & Text.NewGuid(),
@@ -49,10 +53,12 @@ StartLogin = (resourceUrl, state, display) =>
             Context = plainTextCodeVerifier
         ];
 
-FinishLogin = (context, callbackUri, state) => let
-    Parts = Uri.Parts(callbackUri)[Query]
-in 
-    TokenMethod(Parts[code], "authorization_code", context);
+FinishLogin = (context, callbackUri, state) => 
+    let
+        Parts = Uri.Parts(callbackUri)[Query],
+        Code = if Record.HasFields(Parts, "code") then Parts[code] else error "Authorization code not found in callback URI."
+    in 
+        TokenMethod(Code, "authorization_code", context);
 
 TokenMethod = (code, grant_type, optional verifier) =>
     let
@@ -63,8 +69,6 @@ TokenMethod = (code, grant_type, optional verifier) =>
             grant_type = grant_type,
             redirect_uri = redirect_uri
         ],
-
-        ManualHandlingStatusCodes = {},
         Response = Web.Contents("https://identity.xero.com/connect/token", 
         [
             Content = Text.ToBinary(Uri.BuildQueryString(query)),
@@ -72,29 +76,36 @@ TokenMethod = (code, grant_type, optional verifier) =>
                 #"Content-type" = "application/x-www-form-urlencoded",
                 #"Accept" = "application/json"
             ],
-            ManualStatusHandling = ManualHandlingStatusCodes
-        ]
-    ),
-    Parts = Json.Document(Response)
-in
-// check for error response
-if (Parts[error]? <> null) then
-    error Error.Record(Parts[error], Parts[message]?)
-else
-    Parts;
+            ManualStatusHandling = {400, 401, 402, 403, 404}
+        ]),
+        Parts = Json.Document(Response)
+    in
+        if (Record.HasFields(Parts, "error")) then 
+            error Error.Record(Parts[error], Parts[error_description]?) 
+        else 
+            Parts;
 
 Refresh = (resourceUrl, refresh_token) => TokenMethod(refresh_token, "refresh_token");
 
-//Exported functions
-//
-//These functions are exported to the M engine and can be called from the Power Query UI.
-//Credential matching is done based on the function' required parameters.
-//You can have as many parameters as you want, but the required parameters should match in every shared method. 
-//
-//All data source functions associated to the same Data Source Kind must have a matching set of required parameters.
+// Data Source UI publishing description
+ZeroConnector.Publish = [
+    Beta = true,
+    ButtonText = { Extension.LoadString("ButtonTitle"), Extension.LoadString("ButtonHelp") },
+    SourceImage = ZeroConnector.Icons,
+    SourceTypeImage = ZeroConnector.Icons,
+    Category = "Other",
+    LearnMoreUrl = "https://powerbi.microsoft.com/"
+];
 
-[DataSource.Kind="ZeroConnector", Publish="ZeroConnector.UI"]
-shared ZeroConnector.Contents = Value.ReplaceType(Zero.Contents, type function (optional endpoint as text, optional tenantId as text, optional additionalParams as record)as any);
+// Icons definition
+ZeroConnector.Icons = [
+    Icon16 = { Extension.Contents("ZeroConnector16.png"), Extension.Contents("ZeroConnector20.png"), Extension.Contents("ZeroConnector24.png"), Extension.Contents("ZeroConnector32.png") },
+    Icon32 = { Extension.Contents("ZeroConnector32.png"), Extension.Contents("ZeroConnector40.png"), Extension.Contents("ZeroConnector48.png"), Extension.Contents("ZeroConnector64.png") }
+];
+
+// Main data source function
+[DataSource.Kind="ZeroConnector", Publish="ZeroConnector.Publish"]
+shared ZeroConnector.Contents = Value.ReplaceType(Zero.Contents, type function (optional endpoint as text, optional tenantId as text, optional additionalParams as record) as any);
 
 Zero.Contents = (optional endpoint as text, optional tenantId as text, optional additionalParams as record) =>
     let
@@ -102,25 +113,11 @@ Zero.Contents = (optional endpoint as text, optional tenantId as text, optional 
         defaultHeaders = [
             #"Accept" = "application/json"
         ],
-        params = [],
-        url = (if endpoint = null then connectionsPath else endpoint),
-        content = Web.Contents(url, [Headers = defaultHeaders & (if tenantId = null then [] else [#"xero-tenant-id" = tenantId])
+        url = if endpoint = null then connectionsPath else endpoint,
+        response = Web.Contents(url, [
+            Headers = defaultHeaders & (if tenantId = null then [] else [#"xero-tenant-id" = tenantId]),
+            ManualStatusHandling = {400, 401, 402, 403, 404}
         ]),
-        json = Json.Document(content)
-        in
-            json;
-
-//
-//UI Export definition
-//
-ZeroConnector.UI = [
-    Beta = true,
-    ButtonText = { Extension.LoadString("FormulaTitle"), Extension.LoadString("FormulaHelp") },
-    SourceImage = ZeroConnector.Icons,
-    SourceTypeImage = ZeroConnector.Icons
-];
-
-ZeroConnector.Icons = [
-    Icon16 = { Extension.Contents("ZeroConnector16.png"), Extension.Contents("ZeroConnector20.png"), Extension.Contents("ZeroConnector24.png"), Extension.Contents("ZeroConnector32.png") },
-    Icon32 = { Extension.Contents("ZeroConnector32.png"), Extension.Contents("ZeroConnector40.png"), Extension.Contents("ZeroConnector48.png"), Extension.Contents("ZeroConnector64.png") }
-];
+        json = Json.Document(response)
+    in
+        json;
