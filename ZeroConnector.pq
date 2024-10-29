@@ -1,7 +1,7 @@
 [Version = "1.0.0"]
 section ZeroConnector;
 
-client_id = "4E7B0EC068DA412492991FD63BA32B21";
+client_id = "Your client id";
 required_scopes = "openid profile offline_access email accounting.transactions.read accounting.contacts.read";
 
 windowWidth = 600;

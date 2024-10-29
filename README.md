@@ -1,5 +1,12 @@
-Xero Power BI Connector
+# Xero Power BI Connector
 
-Custom connector using Power Query SDK. 
-For testing you will need a Xero free account to get access to the demo company. 
-You will then need to log in to the Xero developer website to create a mobile desktop app to obtain the client id.
+This repository contains a custom connector for Power BI using the Power Query SDK. The connector allows you to connect to Xero, a popular accounting software, and retrieve data for analysis in Power BI.
+
+## Prerequisites
+
+1. **Xero Account**: You will need a free Xero account to access the demo company.
+2. **Developer App**: Log in to the [Xero Developer Portal](https://developer.xero.com/) and create a mobile desktop app to obtain the `client_id`.
+
+## Setup Instructions
+
+1. **Clone the Repository**:
